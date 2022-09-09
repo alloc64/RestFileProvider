@@ -1,0 +1,98 @@
+
+plugins {
+    id 'de.fuerstenau.buildconfig' version '1.1.8'
+    id 'com.github.johnrengelman.shadow'
+    id 'com.palantir.docker' version '0.25.0'
+    id 'java'
+}
+
+apply plugin: 'application'
+apply plugin: 'idea'
+apply plugin: 'com.github.johnrengelman.shadow'
+
+mainClassName = "a.Main"
+
+dependencies {
+    implementation 'org.xerial:sqlite-jdbc:3.32.3.2'
+    implementation 'org.jdbi:jdbi3-sqlite:3.14.4'
+    implementation  'org.jdbi:jdbi3-sqlobject:3.17.0'
+    implementation  'org.jdbi:jdbi3-stringtemplate4:3.17.0'
+
+    implementation  'com.zaxxer:HikariCP:3.3.1'
+
+    implementation  'org.apache.httpcomponents:httpclient:4.5.11'
+    implementation  'org.apache.commons:commons-lang3:3.9'
+    implementation  'org.apache.commons:commons-collections4:4.4'
+    implementation  'org.apache.commons:commons-text:1.9'
+    implementation  'commons-io:commons-io:2.6'
+    implementation  'commons-codec:commons-codec:1.5'
+
+    implementation  'org.json:json:20190722'
+
+    implementation  'org.glassfish.jersey.containers:jersey-container-grizzly2-http:2.30'
+    implementation  'org.glassfish.jersey.media:jersey-media-json-jackson:2.30'
+    implementation  'org.glassfish.jersey.inject:jersey-hk2:2.30'
+    implementation  'org.glassfish.jersey.media:jersey-media-multipart:2.30'
+    implementation  'javax.ws.rs:javax.ws.rs-api:2.0'
+
+    implementation  'org.glassfish.jaxb:jaxb-runtime:2.3.2'
+    implementation  'javax.xml.bind:jaxb-api:2.3.1'
+    implementation  'javax.servlet:javax.servlet-api:4.0.1'
+
+    implementation 'log4j:log4j:1.2.17'
+    implementation 'org.slf4j:slf4j-log4j12:1.7.25'
+    implementation 'org.slf4j:jul-to-slf4j:1.7.30'
+    implementation "com.squareup.okhttp3:okhttp-urlconnection:3.8.1"
+
+    implementation 'org.bouncycastle:bcpkix-jdk15on:1.61'
+    implementation 'org.bouncycastle:bcprov-jdk15on:1.61'
+
+    implementation project(':RestFileProviderLib')
+}
+
+buildConfig {
+    version = System.getProperty("VERSION", "1.0.1")
+
+    clsName = 'BuildConfig'
+    packageName = "com.alloc64.restfileprovider"
+    charset = 'UTF-8'
+
+    buildConfigField 'java.util.Date', 'BUILD_DATE', 'new java.util.Date(' + System.currentTimeMillis() + 'L)'
+    buildConfigField 'boolean', 'DEBUG', { Boolean.parseBoolean(System.getProperty("DEBUG", "true")) }
+}
+
+shadowJar {
+    baseName = 'rest-file-provider'
+}
+
+def destinationJar = jar.getDestinationDir().toString() + '/app-all-min.jar';
+
+task release(type: proguard.gradle.ProGuardTask, dependsOn: shadowJar) {
+    injars shadowJar.getArchivePath()
+
+    if (JavaVersion.current() <= JavaVersion.VERSION_1_8) {
+        libraryjars "${System.properties['java.home']}/lib/jce.jar"
+        libraryjars "${System.properties['java.home']}/lib/rt.jar"
+    } else {
+        libraryjars "${System.properties['java.home']}/jmods/java.base.jmod", jarfilter: '!**.jar', filter: '!module-info.class'
+        libraryjars "${System.properties['java.home']}/jmods/java.compiler.jmod", jarfilter: '!**.jar', filter: '!module-info.class'
+        libraryjars "${System.properties['java.home']}/jmods/java.logging.jmod", jarfilter: '!**.jar', filter: '!module-info.class'
+        libraryjars "${System.properties['java.home']}/jmods/java.xml.jmod", jarfilter: '!**.jar', filter: '!module-info.class'
+        libraryjars "${System.properties['java.home']}/jmods/java.desktop.jmod", jarfilter: '!**.jar', filter: '!module-info.class'
+        libraryjars "${System.properties['java.home']}/jmods/java.sql.jmod", jarfilter: '!**.jar', filter: '!module-info.class'
+        libraryjars "${System.properties['java.home']}/jmods/jdk.unsupported.jmod", jarfilter: '!**.jar', filter: '!module-info.class'
+    }
+
+    configuration "../proguard-base.pro"
+    optimizationpasses 7
+
+    keep 'public class ' + mainClassName +' { public static void main(java.lang.String[]); }'
+
+    outjars destinationJar
+}
+
+docker {
+    name "docker.hub" + "/a/" + shadowJar.baseName + ":" + buildConfig.version
+    dockerfile file('../docker/Dockerfile')
+    files '../docker/entrypoint.sh', destinationJar
+}
